@@ -103,7 +103,7 @@
         <div id="objects">Objects: 0/5</div>
     </div>
     <div id="instructions">
-        Arrow Keys or WASD to Move | Push objects into goal zones (corners)
+        Arrow Keys or WASD to Move | Roll over buttons to toggle goal pockets
     </div>
     <div id="gameOver">
         <h2>Level Complete!</h2>
@@ -119,8 +119,9 @@
     const GOAL_SIZE = 80;
     const PLAYER_RADIUS = 20;
     const OBJECT_RADIUS = 15;
-    const FRICTION = 0.98;
+    const FRICTION = 1.0;
     const RESTITUTION = 0.7;
+    const BUTTON_RADIUS = 25;
 
     // Audio context for sound effects
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -143,11 +144,18 @@
     let elapsedTime = 0;
     let timerInterval;
 
-    const goals = [
-        { x: 0, y: 0, w: GOAL_SIZE, h: GOAL_SIZE, color: '#ef4444' },
-        { x: canvas.width - GOAL_SIZE, y: 0, w: GOAL_SIZE, h: GOAL_SIZE, color: '#3b82f6' },
-        { x: 0, y: canvas.height - GOAL_SIZE, w: GOAL_SIZE, h: GOAL_SIZE, color: '#f59e0b' },
-        { x: canvas.width - GOAL_SIZE, y: canvas.height - GOAL_SIZE, w: GOAL_SIZE, h: GOAL_SIZE, color: '#8b5cf6' }
+    let goals = [
+        { x: 0, y: 0, w: GOAL_SIZE, h: GOAL_SIZE, color: '#ef4444', open: false },
+        { x: canvas.width - GOAL_SIZE, y: 0, w: GOAL_SIZE, h: GOAL_SIZE, color: '#3b82f6', open: false },
+        { x: 0, y: canvas.height - GOAL_SIZE, w: GOAL_SIZE, h: GOAL_SIZE, color: '#f59e0b', open: false },
+        { x: canvas.width - GOAL_SIZE, y: canvas.height - GOAL_SIZE, w: GOAL_SIZE, h: GOAL_SIZE, color: '#8b5cf6', open: false }
+    ];
+
+    let buttons = [
+        { x: canvas.width / 2 - 80, y: canvas.height / 2 - 80, goalIndex: 0, pressed: false },
+        { x: canvas.width / 2 + 80, y: canvas.height / 2 - 80, goalIndex: 1, pressed: false },
+        { x: canvas.width / 2 - 80, y: canvas.height / 2 + 80, goalIndex: 2, pressed: false },
+        { x: canvas.width / 2 + 80, y: canvas.height / 2 + 80, goalIndex: 3, pressed: false }
     ];
 
     // Sound effect functions
@@ -186,6 +194,23 @@
         oscillator.stop(audioCtx.currentTime + 0.3);
     }
 
+    function playButtonSound() {
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.1);
+
+        gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.1);
+    }
+
     function playWallSound() {
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
@@ -216,6 +241,9 @@
         for (let i = 0; i < objectsNeeded; i++) {
             spawnObject();
         }
+        // Reset all goals to closed
+        goals.forEach(goal => goal.open = false);
+        buttons.forEach(button => button.pressed = false);
         startTime = Date.now();
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
@@ -234,6 +262,7 @@
         const speed = Math.random() * 2 + 1;
 
         objects.push({
+
             x: x,
             y: y,
             vx: Math.cos(angle) * speed,
@@ -285,15 +314,48 @@
     }
 
     function checkGoalCollision(obj) {
-        for (let goal of goals) {
+        for (let i = 0; i < goals.length; i++) {
+            const goal = goals[i];
             if (obj.x - obj.radius > goal.x &&
                 obj.x + obj.radius < goal.x + goal.w &&
                 obj.y - obj.radius > goal.y &&
                 obj.y + obj.radius < goal.y + goal.h) {
-                return true;
+
+                if (goal.open) {
+                    return true;
+                } else {
+                    // Bounce off closed goal
+                    const centerX = goal.x + goal.w / 2;
+                    const centerY = goal.y + goal.h / 2;
+                    const dx = obj.x - centerX;
+                    const dy = obj.y - centerY;
+
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        obj.vx = Math.abs(obj.vx) * Math.sign(dx) * RESTITUTION;
+                        obj.x = dx > 0 ? goal.x + goal.w + obj.radius : goal.x - obj.radius;
+                    } else {
+                        obj.vy = Math.abs(obj.vy) * Math.sign(dy) * RESTITUTION;
+                        obj.y = dy > 0 ? goal.y + goal.h + obj.radius : goal.y - obj.radius;
+                    }
+                    playWallSound();
+                    return false;
+                }
             }
         }
         return false;
+    }
+
+
+    function checkButtonPress(obj) {
+        for (let button of buttons) {
+            const dist = Math.hypot(obj.x - button.x, obj.y - button.y);
+            if (dist < BUTTON_RADIUS && !button.pressed) {
+                button.pressed = true;
+                goals[button.goalIndex].open = !goals[button.goalIndex].open;
+                playButtonSound();
+                setTimeout(() => button.pressed = false, 2000);
+            }
+        }
     }
 
     function updatePlayer() {
@@ -307,6 +369,9 @@
 
         player.x += player.vx;
         player.y += player.vy;
+
+        // Check button presses
+        checkButtonPress(player);
 
         if (player.x - player.radius < 0) {
             player.x = player.radius;
@@ -341,6 +406,9 @@
 
             obj.x += obj.vx;
             obj.y += obj.vy;
+
+            // Check button presses
+            checkButtonPress(obj);
 
             if (obj.x - obj.radius < 0) {
                 obj.x = obj.radius;
@@ -390,16 +458,64 @@
         ctx.fillStyle = '#2d2d44';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Draw goals
         for (let goal of goals) {
             ctx.fillStyle = goal.color;
-            ctx.globalAlpha = 0.3;
+            ctx.globalAlpha = goal.open ? 0.3 : 0.1;
             ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
             ctx.globalAlpha = 1;
             ctx.strokeStyle = goal.color;
-            ctx.lineWidth = 3;
+            ctx.lineWidth = goal.open ? 3 : 1;
             ctx.strokeRect(goal.x, goal.y, goal.w, goal.h);
+
+            // Draw X or checkmark on goal
+            ctx.strokeStyle = goal.color;
+            ctx.lineWidth = 3;
+            if (goal.open) {
+                // Draw checkmark
+                ctx.beginPath();
+                ctx.moveTo(goal.x + 20, goal.y + goal.h / 2);
+                ctx.lineTo(goal.x + 35, goal.y + goal.h / 2 + 15);
+                ctx.lineTo(goal.x + goal.w - 20, goal.y + 20);
+                ctx.stroke();
+            } else {
+                // Draw X
+                ctx.beginPath();
+                ctx.moveTo(goal.x + 20, goal.y + 20);
+                ctx.lineTo(goal.x + goal.w - 20, goal.y + goal.h - 20);
+                ctx.moveTo(goal.x + goal.w - 20, goal.y + 20);
+                ctx.lineTo(goal.x + 20, goal.y + goal.h - 20);
+                ctx.stroke();
+            }
         }
 
+        // Draw buttons
+        for (let button of buttons) {
+            const goal = goals[button.goalIndex];
+            ctx.fillStyle = goal.color;
+            ctx.globalAlpha = button.pressed ? 0.8 : 0.4;
+            ctx.beginPath();
+            ctx.arc(button.x, button.y, BUTTON_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = goal.color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw indicator lines to corners
+            ctx.strokeStyle = goal.color;
+            ctx.globalAlpha = 0.2;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(button.x, button.y);
+            ctx.lineTo(goal.x + goal.w / 2, goal.y + goal.h / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+        }
+
+        // Draw objects
         for (let obj of objects) {
             if (obj.inGoal) {
                 ctx.globalAlpha = 0.3;
@@ -414,6 +530,7 @@
             ctx.globalAlpha = 1;
         }
 
+        // Draw player
         ctx.fillStyle = '#4ade80';
         ctx.beginPath();
         ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
