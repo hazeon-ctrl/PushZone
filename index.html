@@ -119,12 +119,16 @@
     const GOAL_SIZE = 80;
     const PLAYER_RADIUS = 20;
     const OBJECT_RADIUS = 15;
-    const FRICTION = 1.0;
+    const FRICTION = 0.997;
     const RESTITUTION = 0.7;
     const BUTTON_RADIUS = 25;
 
     // Audio context for sound effects
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const bgm = new Audio("ghost-house-theme.mp3");
+          bgm.loop = true;
+          bgm.volume = 0.12;
+
 
     let player = {
         x: canvas.width / 2,
@@ -132,7 +136,7 @@
         vx: 0,
         vy: 0,
         radius: PLAYER_RADIUS,
-        speed: 0.5
+        speed: 0.2
     };
 
     let objects = [];
@@ -159,6 +163,16 @@
     ];
 
     // Sound effect functions
+function startBGM(){
+        if (bgm.paused) {
+            bgm.play().catch(err => console.warn("Audio playback blocked:", err));
+            bgm.play();
+    }
+}
+    document.addEventListener("click", startBGM, { once: true });
+    document.addEventListener("keydown", startBGM, { once: true });
+
+
     function playCollisionSound(intensity = 0.5) {
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
@@ -262,7 +276,6 @@
         const speed = Math.random() * 2 + 1;
 
         objects.push({
-
             x: x,
             y: y,
             vx: Math.cos(angle) * speed,
@@ -344,7 +357,6 @@
         }
         return false;
     }
-
 
     function checkButtonPress(obj) {
         for (let button of buttons) {
